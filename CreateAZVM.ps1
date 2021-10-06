@@ -1,6 +1,54 @@
-$LinuxAZVM = New-AzVMConfig -VMName "CCVAZVMLI01" -VMSize "Standard_B1S"
-Set-AzVMOperatingSystem -VM $LinuxAZVM -Linux -ComputerName "CCVAZVMLI01" -Credential $Creds
-Set-AzVMSourceImage -VM $LinuxAZVM -PublisherName "Canonical" -Offer "UbuntuServer" -Skus "19.04" -Version "Latest"
-Set-AzVMOSDisk -VM $LinuxAZVM -Linux -DiskSizeInGB 30 -CreateOption FromImage -Caching ReadWrite
-Add-AzVMNetworkInterface -VM $LinuxAZVM -Id "/subscriptions/8681398b-3eff-4f81-9ec9-07e0c5f4745c/resourceGroups/GRP-AZ-TST/providers/Microsoft.Network/networkInterfaces/int0"
+param(
+[Switch]$DeleteConfig
+)
 
+#General Information variables
+$ResourceGroup = "lab-resource-group-1"
+$Location = "australiaeast"
+$Vnet = Get-AzVirtualNetwork -Name vnet-lab01
+
+function Delete-VM-Config
+{
+}
+
+if($DeleteConfig)
+{
+  Delete-VM-Config
+
+}
+
+#Source image variables
+$Publisher = "Canonical"
+$Offer = "UbuntuServer"
+$SKU = "19.04"
+
+
+#Create public IP Address for accessing the VM.
+$PublicIPAddy = New-AzPublicIpAddress -Name publicipadd-lablinux01 -ResourceGroupName $ResourceGroup -Location australiaeast -SKU Basic -Tier Regional -AllocationMethod Static
+
+#SSH Security groups
+#Security Group profile
+$LabLinux01SecurityGroupConfig = New-AzNetworkSecurityRuleConfig -Name SecurityRule-SSH-Inbound -Protocol Tcp -Priority 1000 `
+-SourcePortRange * -SourceAddressPrefix * `
+-DestinationPortRange 22 -DestinationAddressPrefix * `
+-Access Allow -Direction Inbound
+
+#Security Group
+$LabLinux01SecurityGroup = New-AzNetworkSecurityGroup -Name SecurityGroup-Lablinux01 -ResourceGroupName $ResourceGroup -Location australiaeast `
+-SecurityRules $LabLinux01SecurityGroupConfig
+
+#Create new Network interface for VM
+$VnetInterface = New-AzNetworkInterface -Name int0lablinux01 -ResourceGroupName $ResourceGroup -Location australiaeast -PublicIpAddressId $PublicIPAddy.Id `
+-NetworkSecurityGroupId $LabLinux01SecurityGroup.id -SubnetId $Vnet.Subnets[0].Id #Or just get the ResourceID of the Subnet from azure web portal
+
+#VM Config Profile
+$VMUserAccountCreds = Get-Credential
+$VMConfigProfile = New-AzVMConfig -VMName "LABLINUX01" -VMSize "Standard_B1ls"
+$VMOS = Set-AzVMOperatingSystem -VM $VMConfigProfile -Linux -ComputerName "LABLINUX01" -Credential $VMUserAccountCreds
+$VMImage = Set-AzVMSourceImage -VM $VMConfigProfile -PublisherName $Publisher -Offer $Offer -Skus $SKU -Version Latest 
+$VMDisk = Set-AzVMOSDisk -VM $VMConfigProfile -Name "OS" -Linux -DiskSizeInGB 30 -Caching ReadWrite -CreateOption FromImage -StorageAccountType Standard_LRS
+$VMNetworkInterface = Add-AzVMNetworkInterface -VM $VMConfigProfile -Id $VnetInterface.Id #Or just get the ID of the Interface from azure web portal
+
+
+#Create VM from profile
+New-AZVM -VM $VMConfigProfile -ResourceGroupName $ResourceGroup -Location australiaeast
