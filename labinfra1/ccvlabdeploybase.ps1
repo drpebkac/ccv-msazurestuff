@@ -18,7 +18,6 @@ $ArrayofVMNames = @("LABLINUX01","LABLINUX02","LABLINUX03")
 $ArrayofNIC = @("int0-LABLINUX01","int0-LABLINUX02","int0-LABLINUX03")
 $ArrayofVMDiskNames = @("DISKOSLINUX01","DISKOSLINUX02","DISKOSLINUX03")
 
-
 function Delete-Config
 { 
   $i = 0
@@ -91,7 +90,9 @@ $x = 0
 #Create Vnets with
 foreach($VNetName in $ArrayofVnets)
 {
-  ${$ArrayofSubnetNames[$x]} = New-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] -AddressPrefix $ArrayofSubnetPrefixes[$x] -NetworkSecurityGroupId $NSGInfraLab.Id
+  ${$ArrayofSubnetNames[$x]} = New-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] `
+  -AddressPrefix $ArrayofSubnetPrefixes[$x] `
+  -NetworkSecurityGroupId $NSGInfraLab.Id
 
   ${$VNetName} = New-AzVirtualNetwork -Name $VNetName `
   -ResourceGroupName $ResourceGroup `
