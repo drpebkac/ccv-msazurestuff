@@ -1,45 +1,145 @@
 ﻿param(
+[switch]$PublicIPSetup,
 [Switch]$DeleteConfig
 )
 
 #General Information variables
+#Global info
 $ResourceGroup = "lab-resource-group-1"
 $Location = "australiaeast"
 
-function Delete-VM-Config
-{
-  Remove-AzVirtualNetwork -Name $VnetName vnet-gw01 -ResourceGroupName $ResourceGroup
+#Global Arrays for networks
+$ArrayofVnets = @("VNET-INFRA01","VNET-INFRA02","VNET-INFRA03")
+$ArrayofSubnetNames = @("subnetconfig-VnetInfra01","subnetconfig-VnetInfra02","subnetconfig-VnetInfra03")
+$ArrayofSubnetPrefixes = @("10.110.0.0/24","10.120.0.0/24","10.130.0.0/24")
+$ArrayofVnetPrefixes = @("10.110.0.0/16","10.120.0.0/16","10.130.0.0/16")
+
+#Global Arrays for VMs
+$ArrayofVMNames = @("LABLINUX01","LABLINUX02","LABLINUX03")
+$ArrayofNIC = @("int0-LABLINUX01","int0-LABLINUX02","int0-LABLINUX03")
+$ArrayofVMDiskNames = @("DISKOSLINUX01","DISKOSLINUX02","DISKOSLINUX03")
+
+
+function Delete-Config
+{ 
+  $i = 0
+
+  #Using global arrays and loops to remove all the scoped Vnets and subnets
+  foreach($VNetName in $ArrayofVnets)
+  {
+    $VnetToDelete = Get-AZVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+    Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$i] -VirtualNetwork $VnetToDelete
+    Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
+
+    $i++
+
+  }
+
+  #Remove security group NSG-InfraLabVnets for ping and ssh
+  $NSGInfraLab = Get-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets"
+  Remove-AzNetworkSecurityRuleConfig -Name "AllowSSH" -NetworkSecurityGroup $NSGInfraLab 
+  Remove-AzNetworkSecurityRuleConfig -Name "AllowPing" -NetworkSecurityGroup $NSGInfraLab 
+  Remove-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets" -ResourceGroupName $ResourceGroup -Force
+
+  $i = 0
+
+  #Delete VMs, their interfaces and their cooresponding Public IP Addresses
+  foreach($VM in $ArrayofVMNames)
+  {
+    $PubIPName = "publicipadd-lab" + $i
+    Stop-AZVM -Name $ArrayofVMNames[$i] -Force -SkipShutdown -ResourceGroupName $ResourceGroup
+    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+    Remove-AzVM -Name $ArrayofVMNames[$i] -Force -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i]
+    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+
+  }
+
+  #Sayonara
   exit
 
 }
 
 if($DeleteConfig)
 {
-  Delete-VM-Config
+  Delete-Config
 
 }
 
-#Create subnet object for Vnet vnet-gw01
-$SubnetGW = New-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -AddressPrefix 10.20.0.0/27 
-#Create Vnet vnet-gw01 and assign subnet object $SubnetGW
-$vnetgw01 = New-AzVirtualNetwork -Name "vnet-gw01" -ResourceGroupName $ResourceGroup -Location $Location -AddressPrefix 10.20.0.0/16 -Subnet $SubnetGW 
+#Create security group for ssh and ping. To be assigned to subnet later
+#Security Group profile
+$NSGInfraLabSSHConfig = New-AzNetworkSecurityRuleConfig -Name "AllowSSH" -Protocol Tcp -Priority 1000 `
+-SourcePortRange * -SourceAddressPrefix * `
+-DestinationPortRange 22 -DestinationAddressPrefix * `
+-Access Allow -Direction Inbound
 
-#Create subnet object for Vnet vnet-gw01
-$SubnetLab = New-AzVirtualNetworkSubnetConfig -Name "subnet-lab" -AddressPrefix 10.100.0.0/24
-#Create Vnet vnet-gw01 and assign subnet object $SubnetGW
-$vnetinfra01 = New-AzVirtualNetwork -Name "vnet-infra" -ResourceGroupName $ResourceGroup -Location $Location -AddressPrefix 10.100.0.0/16 -Subnet $SubnetLab
+$NSGInfraLabICMPConfig = New-AzNetworkSecurityRuleConfig -Name "AllowPing" -Protocol Icmp -Priority 1001 `
+-SourcePortRange * -SourceAddressPrefix * `
+-DestinationPortRange * -DestinationAddressPrefix * `
+-Access Allow -Direction Inbound
 
-#Create virtual gateway on subnet-gw
-#Requires public IP
-$PublicIP = New-AzPublicIpAddress -Name publicip01 -ResourceGroupName $ResourceGroup -Location australiaeast -Sku Basic -Tier Regional -AllocationMethod Static
-$NGWconfig = New-AzVirtualNetworkGatewayIpConfig -Name NGWIPConfig -SubnetId $SubnetGW.id -PublicIpAddressId $PublicIP.id
-New-AzVirtualNetworkGateway -Name "ngw-lab01" -ResourceGroupName $ResourceGroup -Location australiaeast -IpConfigurations $NGWconfig -GatewayType Vpn -VpnType PolicyBased -GatewaySku Basic
+#Security Group
+$NSGInfraLab = New-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets" -ResourceGroupName $ResourceGroup -Location $Location `
+-SecurityRules $NSGInfraLabSSHConfig,$NSGInfraLabICMPConfig
+
+#Incremental variable for parsing through the global arrays (This only works because all the global arrays have the same amount of objects in it)
+$x = 0
+
+#Create Vnets with
+foreach($VNetName in $ArrayofVnets)
+{
+  ${$ArrayofSubnetNames[$x]} = New-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] -AddressPrefix $ArrayofSubnetPrefixes[$x] -NetworkSecurityGroupId $NSGInfraLab.Id
+
+  ${$VNetName} = New-AzVirtualNetwork -Name $VNetName `
+  -ResourceGroupName $ResourceGroup `
+  -Location $Location `
+  -AddressPrefix $ArrayofVnetPrefixes[$x] `
+  -Subnet ${$ArrayofSubnetNames[$x]} `
+  
+
+  $x++
+
+}
+
+#VM Config Profile
+
+$i = 0
+
+#VM Info
+$Publisher = "Canonical"
+$Offer = "UbuntuServer"
+$SKU = "19.04"
+
+$ArrayOfSubnetIDfromVnet = @((Get-AzVirtualNetwork).id)
+$VMUserAccountCreds = Get-Credential
+
+foreach($VM in $ArrayofVMNames)
+{
+  #Create new Network interface and public IP for VM
+  $PubIPName = "publicipadd-lab" + $i
+  $PublicIPAddy = New-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Static
+  $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i] -PublicIpAddressId $PublicIPAddy.id
+  
+  #Create VM
+  $VMConfigProfile = New-AzVMConfig -VMName $VM -VMSize "Standard_B1ls"
+  $VMOS = Set-AzVMOperatingSystem -VM $VMConfigProfile -Linux -ComputerName $VM -Credential $VMUserAccountCreds
+  $VMImage = Set-AzVMSourceImage -VM $VMConfigProfile -PublisherName $Publisher -Offer $Offer -Skus $SKU -Version Latest 
+  $VMDisk = Set-AzVMOSDisk -VM $VMConfigProfile -Name $ArrayofVMDiskNames[$i] -Linux -DiskSizeInGB 30 -Caching ReadWrite -CreateOption FromImage -StorageAccountType Standard_LRS
+  $VMNetworkInterface = Add-AzVMNetworkInterface -VM $VMConfigProfile -Id $VnetInterface.Id
+
+  #Create VM from profile
+  New-AZVM -VM $VMConfigProfile -ResourceGroupName $ResourceGroup -Location $Location
+
+  $i++
+
+}
 
 
-#Peer Vnets between vnet-gw01 and vnet-infra
-Add-AzVirtualNetworkPeering -Name "vnetpeering-vnet-gw01-vnet-infra" -VirtualNetwork $vnetgw01 -RemoteVirtualNetworkId $vnetinfra01.id -AllowForwardedTraffic -AllowGatewayTransit -UseRemoteGateways 
-Add-AzVirtualNetworkPeering -Name "vnetpeering-vnet-vnet-infra-gw01" -VirtualNetwork $vnetinfra01 -RemoteVirtualNetworkId $vnetgw01.id -AllowForwardedTraffic -AllowGatewayTransit -UseRemoteGateways 
 
-#Create Security group for subnet subnet-lab
-#$NSGSSHINConfig = New-AzNetworkSecurityRuleConfig -Name "nsg-sshin-config" -Protocol tcp -SourcePortRange * -DestinationPortRange * -SourceAddressPrefix  -DestinationAddressPrefix
-#$NSGSSHIN = New-AzNetworkSecurityGroup -Name "nsg-sshin" -ResourceGroupName $ResourceGroup -Location australiaeast -SecurityRules 
+  
+
+
+  
+  
+
