@@ -47,12 +47,14 @@ function Delete-Config
   foreach($VM in $ArrayofVMNames)
   {
     $PubIPName = "publicipadd-lab" + $i
-    Stop-AZVM -Name $ArrayofVMNames[$i] -Force -SkipShutdown -ResourceGroupName $ResourceGroup
+    Stop-AZVM -Name $ArrayofVMNames[$i] -Force -SkipShutdown -ResourceGroupName $ResourceGroup 
     Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
-    Remove-AzVM -Name $ArrayofVMNames[$i] -Force -ResourceGroupName $ResourceGroup -ErrorAction Ignore
-    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -ErrorAction Ignore
-    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i]
-    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+    Remove-AzVM -Name $ArrayofVMNames[$i] -Force -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i] -Force -ErrorAction Ignore
+    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+
+    Write-Output "$VM and its resources have been deleted."
 
   }
 
