@@ -1,4 +1,5 @@
 ﻿param(
+[Switch]$NoPublicIP,
 [Switch]$DeleteConfig
 )
 
@@ -26,36 +27,46 @@ function Delete-Config
   foreach($VM in $ArrayofVMNames)
   {
     $PubIPName = "publicipadd-lab" + $i
-    Stop-AZVM -Name $VM -Force -SkipShutdown -ResourceGroupName $ResourceGroup -ErrorAction Ignore
-    Remove-AzVM -Name $VM -Force -ResourceGroupName $ResourceGroup -ErrorAction Ignore
-    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup
-    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i] -Force -ErrorAction Ignore
-    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+    Stop-AZVM -Name $VM -Force -SkipShutdown -ResourceGroupName $ResourceGroup 
+    Remove-AzVM -Name $VM -Force -ResourceGroupName $ResourceGroup
+    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Force
+    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i] -Force
+    
+    try
+    {
+      Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force
+
+    }
+    catch [Exception]
+    {
+      Write-Output "No Public IP address for $VM"
+
+    }
 
     $i++
 
   }
 
-  $i = 0
+  $x = 0
 
-  #Using global arrays and loops to remove all the scoped Vnets and subnets
+  #Using global arrays and loops to remove all subnets
   foreach($VNetName in $ArrayofVnets)
   {
     $VnetToDelete = Get-AZVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
-    Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$i] -VirtualNetwork $VnetToDelete
+    Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] -VirtualNetwork $VnetToDelete
 
-    $i++
+    $x++
 
   }
-
-  #Delete Vnet last since its associated with the above
-  Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
 
   #Remove security group NSG-InfraLabVnets for ping and ssh
   $NSGInfraLab = Get-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets"
   Remove-AzNetworkSecurityRuleConfig -Name "AllowSSH" -NetworkSecurityGroup $NSGInfraLab 
   Remove-AzNetworkSecurityRuleConfig -Name "AllowPing" -NetworkSecurityGroup $NSGInfraLab 
   Remove-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets" -ResourceGroupName $ResourceGroup -Force
+
+  #Delete Vnet last since its associated with the above
+  Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
 
   #Sayonara
   exit
@@ -100,7 +111,6 @@ foreach($VNetName in $ArrayofVnets)
   -AddressPrefix $ArrayofVnetPrefixes[$x] `
   -Subnet ${$ArrayofSubnetNames[$x]} `
   
-
   $x++
 
 }
@@ -119,11 +129,20 @@ $VMUserAccountCreds = Get-Credential
 
 foreach($VM in $ArrayofVMNames)
 {
-  #Create new Network interface and public IP for VM
-  $PubIPName = "publicipadd-lab" + $i
-  $PublicIPAddy = New-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Static
-  $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i] -PublicIpAddressId $PublicIPAddy.id
+  #Create new Network interface and public IP for VM if defined
+  if($NoPublicIP -eq $true)
+  {
+    $PubIPName = "publicipadd-lab" + $i
+    $PublicIPAddy = New-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Static
+    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i] -PublicIpAddressId $PublicIPAddy.id
   
+  }
+  else
+  {
+    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i]
+
+  }
+
   #Create VM
   $VMConfigProfile = New-AzVMConfig -VMName $VM -VMSize "Standard_B1ls"
   $VMOS = Set-AzVMOperatingSystem -VM $VMConfigProfile -Linux -ComputerName $VM -Credential $VMUserAccountCreds
@@ -137,12 +156,3 @@ foreach($VM in $ArrayofVMNames)
   $i++
 
 }
-
-
-
-  
-
-
-  
-  
-
