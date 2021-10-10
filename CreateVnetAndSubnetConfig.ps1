@@ -20,6 +20,7 @@ function Delete-Network-Infra
   if($CheckSubnetlabExist)
   {
     Remove-AzVirtualNetworkSubnetConfig -Name Networksubnet-lab -VirtualNetwork $VNet
+    $VNet | Set-AzVirtualNetwork
      
   }
 
