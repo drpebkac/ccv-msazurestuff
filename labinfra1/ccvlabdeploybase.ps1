@@ -1,5 +1,4 @@
 ﻿param(
-[switch]$PublicIPSetup,
 [Switch]$DeleteConfig
 )
 
