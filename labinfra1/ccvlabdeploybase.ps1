@@ -9,15 +9,15 @@ $ResourceGroup = "lab-resource-group-1"
 $Location = "australiaeast"
 
 #Global Arrays for networks
-$ArrayofVnets = @("VNET-INFRA01","VNET-INFRA02","VNET-INFRA03")
-$ArrayofSubnetNames = @("subnetconfig-VnetInfra01","subnetconfig-VnetInfra02","subnetconfig-VnetInfra03")
+$ArrayofVnets = @("vnet-infra01","vnet-infra02","vnet-infra03")
+$ArrayofSubnetNames = @("subnet-VnetInfra01","subnet-VnetInfra02","subnet-VnetInfra03")
 $ArrayofSubnetPrefixes = @("10.110.0.0/24","10.120.0.0/24","10.130.0.0/24")
 $ArrayofVnetPrefixes = @("10.110.0.0/16","10.120.0.0/16","10.130.0.0/16")
 
 #Global Arrays for VMs
 $ArrayofVMNames = @("LABLINUX01","LABLINUX02","LABLINUX03")
 $ArrayofNIC = @("int0-LABLINUX01","int0-LABLINUX02","int0-LABLINUX03")
-$ArrayofVMDiskNames = @("DISKOSLINUX01","DISKOSLINUX02","DISKOSLINUX03")
+$ArrayofVMDiskNames = @("osdisk-LABLINUX01","osdisk-LABLINUX02","osdisk-LABLINUX03")
 
 function Delete-Config
 { 
@@ -52,8 +52,12 @@ function Delete-Config
   #Using global arrays and loops to remove all subnets
   foreach($VNetName in $ArrayofVnets)
   {
+    
     $VnetToDelete = Get-AZVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
     Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] -VirtualNetwork $VnetToDelete
+
+    #Don't ask why or how piping is needed but apparently it's needed for the subnets to actually be deleted properly
+    $VnetToDelete | Set-AzVirtualNetwork
 
     $x++
 
@@ -65,8 +69,12 @@ function Delete-Config
   Remove-AzNetworkSecurityRuleConfig -Name "AllowPing" -NetworkSecurityGroup $NSGInfraLab 
   Remove-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets" -ResourceGroupName $ResourceGroup -Force
 
-  #Delete Vnet last since its associated with the above
-  Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
+  foreach($VNetName in $ArrayofVnets)
+  {
+    #Delete Vnet last since its associated with the above
+    Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
+
+  }
 
   #Sayonara
   exit
@@ -115,6 +123,23 @@ foreach($VNetName in $ArrayofVnets)
 
 }
 
+#Create Peering network
+#I got too lazy to put these into an array so its gonna be linear for now
+$VnetSource = Get-AzVirtualNetwork -Name vnet-gw01
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra01
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-gw01-vnet-infra01 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VNetRemote.Id -AllowForwardedTraffic -AllowGatewayTransit
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-gw01 -VirtualNetwork $VNetRemote -RemoteVirtualNetworkId $VNetSource.Id -AllowForwardedTraffic -UseRemoteGateways
+
+$VnetSource = Get-AzVirtualNetwork -Name vnet-infra01
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra02
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-infra02 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra01 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
+
+$VnetSource = Get-AzVirtualNetwork -Name vnet-infra02
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra03
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra03 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra03-vnet-infra02 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
+  
 #VM Config Profile
 
 $i = 0
@@ -132,14 +157,14 @@ foreach($VM in $ArrayofVMNames)
   #Create new Network interface and public IP for VM if defined
   if($NoPublicIP -eq $true)
   {
-    $PubIPName = "publicipadd-lab" + $i
-    $PublicIPAddy = New-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Static
-    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i] -PublicIpAddressId $PublicIPAddy.id
+    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i]
   
   }
   else
   {
-    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i]
+    $PubIPName = "publicipadd-lab" + $i
+    $PublicIPAddy = New-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Static
+    $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i] -PublicIpAddressId $PublicIPAddy.id
 
   }
 
