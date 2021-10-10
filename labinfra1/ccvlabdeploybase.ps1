@@ -123,22 +123,6 @@ foreach($VNetName in $ArrayofVnets)
 
 }
 
-#Create Peering network
-#I got too lazy to put these into an array so its gonna be linear for now
-$VnetSource = Get-AzVirtualNetwork -Name vnet-gw01
-$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra01
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-gw01-vnet-infra01 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VNetRemote.Id -AllowForwardedTraffic -AllowGatewayTransit
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-gw01 -VirtualNetwork $VNetRemote -RemoteVirtualNetworkId $VNetSource.Id -AllowForwardedTraffic -UseRemoteGateways
-
-$VnetSource = Get-AzVirtualNetwork -Name vnet-infra01
-$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra02
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-infra02 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra01 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
-
-$VnetSource = Get-AzVirtualNetwork -Name vnet-infra02
-$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra03
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra03 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
-Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra03-vnet-infra02 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
   
 #VM Config Profile
 
@@ -181,3 +165,21 @@ foreach($VM in $ArrayofVMNames)
   $i++
 
 }
+
+#Create Peering network
+#Adding this last since peering can't be created if vnets are not ready
+#I got too lazy to put these into an array so its gonna be linear for now
+$VnetSource = Get-AzVirtualNetwork -Name vnet-gw01
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra01
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-gw01-vnet-infra01 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VNetRemote.Id -AllowForwardedTraffic -AllowGatewayTransit
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-gw01 -VirtualNetwork $VNetRemote -RemoteVirtualNetworkId $VNetSource.Id -AllowForwardedTraffic -UseRemoteGateways
+
+$VnetSource = Get-AzVirtualNetwork -Name vnet-infra01
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra02
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra01-vnet-infra02 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra01 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
+
+$VnetSource = Get-AzVirtualNetwork -Name vnet-infra02
+$VnetRemote = Get-AzVirtualNetwork -Name vnet-infra03
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra02-vnet-infra03 -VirtualNetwork $VNetSource -RemoteVirtualNetworkId $VnetRemote.Id -AllowForwardedTraffic
+Add-AzVirtualNetworkPeering -Name vpeering-vnet-infra03-vnet-infra02 -VirtualNetwork $VnetRemote -RemoteVirtualNetworkId $VnetSource.Id -AllowForwardedTraffic
