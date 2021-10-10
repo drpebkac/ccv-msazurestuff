@@ -24,39 +24,40 @@ function Delete-Config
 { 
   $i = 0
 
+  #Delete VMs, their interfaces and their cooresponding Public IP Addresses
+  foreach($VM in $ArrayofVMNames)
+  {
+    $PubIPName = "publicipadd-lab" + $i
+    Stop-AZVM -Name $VM -Force -SkipShutdown -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+    Remove-AzVM -Name $VM -Force -ResourceGroupName $ResourceGroup -ErrorAction Ignore
+    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup
+    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i] -Force -ErrorAction Ignore
+    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
+
+    $i++
+
+  }
+
+  $i = 0
+
   #Using global arrays and loops to remove all the scoped Vnets and subnets
   foreach($VNetName in $ArrayofVnets)
   {
     $VnetToDelete = Get-AZVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
     Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$i] -VirtualNetwork $VnetToDelete
-    Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
 
     $i++
 
   }
+
+  #Delete Vnet last since its associated with the above
+  Remove-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup -Force
 
   #Remove security group NSG-InfraLabVnets for ping and ssh
   $NSGInfraLab = Get-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets"
   Remove-AzNetworkSecurityRuleConfig -Name "AllowSSH" -NetworkSecurityGroup $NSGInfraLab 
   Remove-AzNetworkSecurityRuleConfig -Name "AllowPing" -NetworkSecurityGroup $NSGInfraLab 
   Remove-AzNetworkSecurityGroup -Name "NSG-InfraLabVnets" -ResourceGroupName $ResourceGroup -Force
-
-  $i = 0
-
-  #Delete VMs, their interfaces and their cooresponding Public IP Addresses
-  foreach($VM in $ArrayofVMNames)
-  {
-    $PubIPName = "publicipadd-lab" + $i
-    Stop-AZVM -Name $ArrayofVMNames[$i] -Force -SkipShutdown -ResourceGroupName $ResourceGroup 
-    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
-    Remove-AzVM -Name $ArrayofVMNames[$i] -Force -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
-    Remove-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
-    Remove-AzDisk -ResourceGroupName $ResourceGroup -Name $ArrayofVMDiskNames[$i] -Force -ErrorAction Ignore
-    Remove-AzPublicIpAddress -Name $PubIPName -ResourceGroupName $ResourceGroup -Force -ErrorAction Ignore
-
-    Write-Output "$VM and its resources have been deleted."
-
-  }
 
   #Sayonara
   exit
@@ -113,7 +114,7 @@ $Publisher = "Canonical"
 $Offer = "UbuntuServer"
 $SKU = "19.04"
 
-$ArrayOfSubnetIDfromVnet = @((Get-AzVirtualNetwork).id)
+$ArrayOfSubnetIDfromVnet = @(((Get-AzVirtualNetwork).Subnets | Where { $_.ID -Like "*VNET-INFRA*" }).id)
 $VMUserAccountCreds = Get-Credential
 
 foreach($VM in $ArrayofVMNames)
