@@ -135,7 +135,10 @@ $VMUserAccountCreds = Get-Credential
 foreach($VM in $ArrayofVMNames)
 {
   #Create VM NIC interface
-  $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] -ResourceGroupName $ResourceGroup -Location $Location -SubnetId $ArrayOfSubnetIDfromVnet[$i]
+  $VnetInterface = New-AzNetworkInterface -Name $ArrayofNIC[$i] `
+  -ResourceGroupName $ResourceGroup `
+  -Location $Location `
+  -SubnetId $ArrayOfSubnetIDfromVnet[$i]
   
   #Create VM
   $VMConfigProfile = New-AzVMConfig -VMName $VM -VMSize "Standard_B1ls"
