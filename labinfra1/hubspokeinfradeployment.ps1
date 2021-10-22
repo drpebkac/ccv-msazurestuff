@@ -10,8 +10,8 @@ $Location = "australiaeast"
 #Global Arrays for networks
 $ArrayofVnets = @("vnet0-hubgw","vnet0-spoke-infra02","vnet0-spoke-infra03")
 $ArrayofSubnetNames = @("subnetconfig-hubgw","subnetconfig-spoke-infra01","subnetconfig-spoke-infra02")
-$ArrayofSubnetPrefixes = @("10.0.1.0/24","10.10.0.0/24","10.20.0.0/24")
 $ArrayofVnetPrefixes = @("10.0.0.0/16","10.10.0.0/16","10.20.0.0/16")
+$ArrayofSubnetPrefixes = @("10.0.2.0/24","10.10.0.0/24","10.20.0.0/24")
 
 #Global Arrays for VMs
 $ArrayofVMNames = @("LABJUMPBOX","LABLINUX01","LABLINUX02")
@@ -36,6 +36,7 @@ function Delete-Config
 
   #Remove Public IP addresses
   Remove-AzPublicIpAddress -Name "pip-labjumpbox" -ResourceGroupName $ResourceGroup -Force
+  Remove-AzPublicIpAddress -Name "pip-vgw" -ResourceGroupName $ResourceGroup -Force
 
   $x = 0
 
@@ -45,13 +46,16 @@ function Delete-Config
     
     $VnetToDelete = Get-AZVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
     Remove-AzVirtualNetworkSubnetConfig -Name $ArrayofSubnetNames[$x] -VirtualNetwork $VnetToDelete
-
-    #Don't ask why or how piping is needed but apparently it's needed for the subnets to actually be deleted properly
     $VnetToDelete | Set-AzVirtualNetwork
 
     $x++
 
   }
+
+  #Remove GatewaySubnet
+  $VnetToDelete = Get-AZVirtualNetwork -Name $ArrayofVnets[0] -ResourceGroupName $ResourceGroup
+  Remove-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -VirtualNetwork $VnetToDelete
+  $VnetToDelete | Set-AzVirtualNetwork
 
   #Remove security group NSG-InfraLabVnets for ping and ssh
   $NSGInfraLab = Get-AzNetworkSecurityGroup -Name "nsg-infralabs"
@@ -76,7 +80,6 @@ if($DeleteConfig)
   Delete-Config
 
 }
-
 
 #Create security group for ssh and ping. To be assigned to subnet later
 #Security Group profile
@@ -118,6 +121,12 @@ foreach($VnetName in $ArrayofVnets)
   $i++
 
 }
+
+#Configure GatewaySubnet
+$GatewaySubnetPrefix = "10.0.1.0/27"
+$Vnet = Get-AzVirtualNetwork -Name $ArrayofVnets[0] -ResourceGroupName $ResourceGroup
+$GatewaySubnetConfigProfile = Add-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -VirtualNetwork $Vnet -AddressPrefix $GatewaySubnetPrefix 
+$GatewaySubnetConfigProfile | Set-AzVirtualNetwork
 
 #VM Config Profile
 
@@ -163,3 +172,19 @@ $ipconfignamefornic = (Get-AzNetworkInterface -Name $ArrayofNIC[0] -ResourceGrou
 ${$ArrayofNIC[0]} = Get-AzNetworkInterface -Name $ArrayofNIC[0] -ResourceGroupName $ResourceGroup
 ${$ArrayofNIC[0]} | Set-AzNetworkInterfaceIpConfig -Name $ipconfignamefornic -PublicIpAddressId $PublicIPAddy.Id -SubnetId $ArrayOfSubnetIDfromVnet[0]
 ${$ArrayofNIC[0]} | Set-AzNetworkInterface
+
+$PublicIPAddy = New-AzPublicIpAddress -Name "pip-vgw" -ResourceGroupName $ResourceGroup -Location $Location -SKU Basic -Tier Regional -AllocationMethod Dynamic
+
+#Vnet and gateway subnet info
+$Vnet = Get-AzVirtualNetwork -Name $ArrayofVnets[0]
+$subnet = Get-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -VirtualNetwork $vnet
+
+$gwipconfig = New-AzVirtualNetworkGatewayIpConfig -Name "vgwipconfig1" -SubnetId $subnet.id -PublicIpAddressId $PublicIPAddy.Id
+
+New-AzVirtualNetworkGateway -Name "vng-lab" `
+-ResourceGroupName $ResourceGroup `
+-Location $Location `
+-VpnType "Routebased" `
+-IpConfigurations $gwipconfig `
+-GatewayType "Vpn" `
+-GatewaySku "VpnGw1"
